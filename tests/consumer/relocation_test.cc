@@ -12,8 +12,9 @@ int main() {
   google::protobuf::Struct value, restored;
   (*value.mutable_fields())["status"].set_string_value("ok");
   if (!restored.ParseFromString(value.SerializeAsString()) ||
-      restored.fields().at("status").string_value() != "ok")
+      restored.fields().at("status").string_value() != "ok") {
     return 1;
+  }
   if (absl::Uint128Low64(absl::MakeUint128(1, 2)) != 2) return 2;
   Highs highs;
   highs.setOptionValue("output_flag", false);
@@ -34,8 +35,9 @@ int main() {
   if (highs.passModel(lp) != HighsStatus::kOk ||
       highs.run() != HighsStatus::kOk ||
       highs.getModelStatus() != HighsModelStatus::kOptimal ||
-      std::abs(highs.getObjectiveValue() - 1) > 1e-6)
+      std::abs(highs.getObjectiveValue() - 1) > 1e-6) {
     return 4;
+  }
   namespace cp = operations_research::sat;
   cp::CpModelProto model;
   auto* variable = model.add_variables();
@@ -51,7 +53,8 @@ int main() {
   if (session.Run(model, parameters, {}, &response, &error) !=
           optagent::cpsat_sdk::RunStatus::kOk ||
       !error.empty() || response.status() != cp::OPTIMAL ||
-      response.solution(0) != 1)
+      response.solution(0) != 1) {
     return 5;
+  }
   return 0;
 }

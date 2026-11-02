@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import json
 import os
@@ -38,6 +39,25 @@ def _sha(path: Path) -> str:
 
 def _identity(value: object) -> str:
     return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
+
+
+def _producer_snapshot() -> dict:
+    paths = [ROOT / "CMakeLists.txt", ROOT / "sdk.lock.json", ROOT / "sdk.py", ROOT / "requirements-producer.lock"]
+    paths += list((ROOT / "cmake").glob("*")) + list((ROOT / "patches").glob("*"))
+    files = {str(p.relative_to(ROOT)): _sha(p) for p in sorted(paths) if p.is_file()}
+    revision = _run(["git", "rev-parse", "HEAD"], cwd=ROOT, capture=True)
+    dirty = bool(_run(["git", "status", "--porcelain"], cwd=ROOT, capture=True))
+    return {
+        "repository": "https://github.com/Dongbox/optagent-native-sdk.git",
+        "revision": revision,
+        "dirty": dirty,
+        "recipe_files": files,
+    }
+
+
+def _verify_snapshot(expected: dict) -> None:
+    if _producer_snapshot() != expected:
+        raise RuntimeError("Producer recipes changed during production; retry using the retained module cache")
 
 
 def _run(command: list[str], *, cwd: Path | None = None, capture: bool = False) -> str:
@@ -220,6 +240,28 @@ constexpr int rtti = 1;
 #else
 constexpr int rtti = 0;
 #endif
+#if defined(__SANITIZE_ADDRESS__)
+constexpr int address_sanitizer = 1;
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer)
+constexpr int address_sanitizer = 1;
+#else
+constexpr int address_sanitizer = 0;
+#endif
+#else
+constexpr int address_sanitizer = 0;
+#endif
+#if defined(__SANITIZE_THREAD__)
+constexpr int thread_sanitizer = 1;
+#elif defined(__has_feature)
+#if __has_feature(thread_sanitizer)
+constexpr int thread_sanitizer = 1;
+#else
+constexpr int thread_sanitizer = 0;
+#endif
+#else
+constexpr int thread_sanitizer = 0;
+#endif
 """
     checks = {
         "library_abi": "stdlib_abi",
@@ -228,6 +270,8 @@ constexpr int rtti = 0;
         "exceptions": "exceptions",
         "rtti": "rtti",
         "dynamic_crt": "dynamic_crt",
+        "address_sanitizer": "address_sanitizer",
+        "thread_sanitizer": "thread_sanitizer",
         "sizeof(void*)": "pointer_size",
         "sizeof(std::string)": "string_size",
         "sizeof(std::vector<int>)": "vector_size",
@@ -245,6 +289,78 @@ constexpr int rtti = 0;
         f'  "{abi["absl_namespace"]}", "Native SDK Abseil namespace differs");\n'
     )
     return header + "#undef OPTAGENT_NATIVE_STRINGIFY\n#undef OPTAGENT_NATIVE_STRINGIFY_INNER\n}\n#endif\n"
+
+
+def _configure_command(
+    args,
+    name: str,
+    sources: dict,
+    dependencies: dict,
+    manifest: Path,
+    build: Path,
+    prefix: Path,
+    configuration: str,
+    sanitizer: str,
+) -> list[str]:
+    configure = [
+        args.cmake,
+        "-S",
+        str(ROOT),
+        "-B",
+        str(build),
+        "-G",
+        "Ninja",
+        f"-DCMAKE_MAKE_PROGRAM={shutil.which('ninja')}",
+        f"-DOPTAGENT_SDK_COMPONENT={name}",
+        f"-DOPTAGENT_NATIVE_LINKAGE={args.linkage}",
+        f"-DOPTAGENT_SDK_SOURCES={manifest}",
+        f"-DCMAKE_BUILD_TYPE={configuration}",
+        f"-DCMAKE_INSTALL_PREFIX={prefix}",
+        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+        f"-DOPTAGENT_SDK_SANITIZER={sanitizer}",
+        f"-DOPTAGENT_SDK_HIPO={'ON' if args.hipo else 'OFF'}",
+        "-DCMAKE_PREFIX_PATH=" + ";".join(str(path) for path in dependencies.values()),
+    ]
+    if args.compiler_cache:
+        configure += [
+            f"-DCMAKE_C_COMPILER_LAUNCHER={args.compiler_cache}",
+            f"-DCMAKE_CXX_COMPILER_LAUNCHER={args.compiler_cache}",
+        ]
+    if platform.system() == "Darwin":
+        configure.append(f"-DCMAKE_OSX_DEPLOYMENT_TARGET={args.deployment_target}")
+    if name == "cpsat":
+        configure += [
+            f"-DOPTAGENT_HOST_PROTOC={dependencies['host'] / 'bin' / ('protoc.exe' if os.name == 'nt' else 'protoc')}",
+            "-DOPTAGENT_CPSAT_BUILD_TESTS=ON",
+        ]
+    if name == "highs" and "openblas" in dependencies:
+        configure.append(f"-DOPTAGENT_OPENBLAS_ROOT={dependencies['openblas']}")
+    if name == "openblas":
+        configure = [
+            args.cmake,
+            "-S",
+            str(sources["openblas"]),
+            "-B",
+            str(build),
+            "-G",
+            "Ninja",
+            f"-DCMAKE_MAKE_PROGRAM={shutil.which('ninja')}",
+            f"-DCMAKE_INSTALL_PREFIX={prefix}",
+            f"-DCMAKE_BUILD_TYPE={configuration}",
+        ]
+        options = json.loads((ROOT / "cmake/openblas-options.json").read_text())
+        configure += [f"-D{key}={value}" for key, value in options.items()]
+        if os.name == "nt":
+            compiler = shutil.which("clang-cl")
+            if compiler is None:
+                raise RuntimeError("OpenBLAS production requires clang-cl")
+            configure += [
+                f"-DCMAKE_C_COMPILER={compiler}",
+                f"-DCMAKE_ASM_COMPILER={compiler}",
+                "-DCMAKE_MSVC_RUNTIME_LIBRARY="
+                + ("MultiThreadedDebugDLL" if configuration == "Debug" else "MultiThreadedDLL"),
+            ]
+    return configure
 
 
 def _module(args, lock: dict, name: str, dependencies: dict[str, Path]) -> Path:
@@ -275,6 +391,8 @@ def _module(args, lock: dict, name: str, dependencies: dict[str, Path]) -> Path:
         "deployment_target": args.deployment_target if platform.system() == "Darwin" else "",
         "hipo": args.hipo if name in {"highs", "openblas"} else None,
         "compiler": args.compiler_identity,
+        "build_tools": args.build_tools,
+        "driver_policy": args.configure_policy,
         "dependencies": {
             key: json.loads((path.parent / "ready.json").read_text())["id"] for key, path in dependencies.items()
         },
@@ -324,62 +442,7 @@ def _module(args, lock: dict, name: str, dependencies: dict[str, Path]) -> Path:
                     build = candidate
                     break
         _write_json(index, {"build": str(build)})
-    configure = [
-        args.cmake,
-        "-S",
-        str(ROOT),
-        "-B",
-        str(build),
-        "-G",
-        "Ninja",
-        f"-DOPTAGENT_SDK_COMPONENT={name}",
-        f"-DOPTAGENT_NATIVE_LINKAGE={args.linkage}",
-        f"-DOPTAGENT_SDK_SOURCES={manifest}",
-        f"-DCMAKE_BUILD_TYPE={configuration}",
-        f"-DCMAKE_INSTALL_PREFIX={prefix}",
-        "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
-        f"-DOPTAGENT_SDK_SANITIZER={sanitizer}",
-        f"-DOPTAGENT_SDK_HIPO={'ON' if args.hipo else 'OFF'}",
-        "-DCMAKE_PREFIX_PATH=" + ";".join(str(path) for path in dependencies.values()),
-    ]
-    if args.compiler_cache:
-        configure += [
-            f"-DCMAKE_C_COMPILER_LAUNCHER={args.compiler_cache}",
-            f"-DCMAKE_CXX_COMPILER_LAUNCHER={args.compiler_cache}",
-        ]
-    if platform.system() == "Darwin":
-        configure.append(f"-DCMAKE_OSX_DEPLOYMENT_TARGET={args.deployment_target}")
-    if name == "cpsat":
-        configure += [
-            f"-DOPTAGENT_HOST_PROTOC={dependencies['host'] / 'bin' / ('protoc.exe' if os.name == 'nt' else 'protoc')}",
-            "-DOPTAGENT_CPSAT_BUILD_TESTS=ON",
-        ]
-    if name == "highs" and "openblas" in dependencies:
-        configure.append(f"-DOPTAGENT_OPENBLAS_ROOT={dependencies['openblas']}")
-    if name == "openblas":
-        configure = [
-            args.cmake,
-            "-S",
-            str(sources["openblas"]),
-            "-B",
-            str(build),
-            "-G",
-            "Ninja",
-            f"-DCMAKE_INSTALL_PREFIX={prefix}",
-            f"-DCMAKE_BUILD_TYPE={configuration}",
-        ]
-        options = json.loads((ROOT / "cmake/openblas-options.json").read_text())
-        configure += [f"-D{key}={value}" for key, value in options.items()]
-        if os.name == "nt":
-            compiler = shutil.which("clang-cl")
-            if compiler is None:
-                raise RuntimeError("OpenBLAS production requires clang-cl")
-            configure += [
-                f"-DCMAKE_C_COMPILER={compiler}",
-                f"-DCMAKE_ASM_COMPILER={compiler}",
-                "-DCMAKE_MSVC_RUNTIME_LIBRARY="
-                + ("MultiThreadedDebugDLL" if configuration == "Debug" else "MultiThreadedDLL"),
-            ]
+    configure = _configure_command(args, name, sources, dependencies, manifest, build, prefix, configuration, sanitizer)
     print(f"[sdk] build {name} {key[:12]}", flush=True)
     _run(configure)
     _run([args.cmake, "--build", str(build), "--target", "install", "--parallel", str(args.jobs)])
@@ -416,6 +479,7 @@ def _compose(args, lock: dict, modules: dict[str, Path]) -> Path:
         }
         if (
             metadata["source_lock"] != lock
+            or metadata.get("producer") != args.producer_snapshot
             or {name: value["id"] for name, value in metadata["modules"].items()} != identities
         ):
             raise RuntimeError(f"SDK output differs; choose a new immutable prefix: {destination}")
@@ -459,6 +523,8 @@ def _compose(args, lock: dict, modules: dict[str, Path]) -> Path:
                 "linkage": args.linkage,
                 "sanitizer": args.sanitizer,
                 "source_lock": lock,
+                "producer": args.producer_snapshot,
+                "build_tools": args.build_tools,
                 "modules": records,
                 "files": _files(stage),
                 "deployment_target": args.deployment_target if platform.system() == "Darwin" else "",
@@ -536,6 +602,7 @@ def main(argv: list[str] | None = None) -> int:
     Returns:
         Zero on success, or two for invalid configuration or failed validation.
     """
+    os.environ["PATH"] = str(Path(sys.executable).parent) + os.pathsep + os.environ.get("PATH", "")
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
     build = subparsers.add_parser("build")
@@ -575,6 +642,17 @@ def main(argv: list[str] | None = None) -> int:
         args.cache = args.cache.resolve()
         args.seed_root = [path.resolve() for path in args.seed_root]
         with _producer_lock(args.cache):
+            policy = next(
+                node
+                for node in ast.parse((ROOT / "sdk.py").read_text()).body
+                if isinstance(node, ast.FunctionDef) and node.name == "_configure_command"
+            )
+            args.configure_policy = _identity(ast.dump(policy, include_attributes=False))
+            args.producer_snapshot = _producer_snapshot()
+            args.build_tools = {
+                "cmake": _run([args.cmake, "--version"], capture=True).splitlines()[0],
+                "ninja": _run(["ninja", "--version"], capture=True),
+            }
             args.compiler_identity = _compiler_identity(args)
             lock = json.loads((ROOT / "sdk.lock.json").read_text())
             host = _module(args, lock, "host", {})
@@ -588,6 +666,7 @@ def main(argv: list[str] | None = None) -> int:
             )
             modules["cpsat"] = _module(args, lock, "cpsat", {"host": host, "common": common, "support": support})
             modules["test-tools"] = _module(args, lock, "test-tools", {})
+            _verify_snapshot(args.producer_snapshot)
             _compose(args, lock, modules)
         return 0
     except (OSError, ValueError, KeyError, RuntimeError, subprocess.CalledProcessError) as error:

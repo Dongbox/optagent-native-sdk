@@ -27,5 +27,25 @@ if(OPTAGENT_SDK_HIPO AND NOT APPLE)
   set(HIGHS_BLAS_LICENSE BSD-3-Clause)
 endif()
 add_subdirectory("${SDK_HIGHS_SOURCE_DIR}" highs)
+if(BUILD_SHARED_LIBS)
+  set(_private_parallel_patterns
+    "*HighsTask*" "*HighsSplitDeque*" "*HighsScheduler*" "*HighsCombinable*"
+    "*HighsBinarySemaphore*" "*HighsSpinMutex*" "*HighsMutex*" "*HighsRaceTimer*"
+    "*highs*parallel*" "*highs*cache_aligned*")
+  set_property(TARGET highs PROPERTY OPTAGENT_SDK_PRIVATE_SYMBOLS "${_private_parallel_patterns}")
+  # Mach-O coalesces exported weak C++/TLS definitions across dylibs even with
+  # private install names. The parallel runtime belongs to this HiGHS instance.
+  set_target_properties(highs PROPERTIES VISIBILITY_INLINES_HIDDEN ON)
+  if(TARGET highs_extras)
+    set_target_properties(highs_extras PROPERTIES VISIBILITY_INLINES_HIDDEN ON)
+  endif()
+  if(APPLE)
+    set(_private_parallel "${CMAKE_CURRENT_BINARY_DIR}/highs-private-symbols.list")
+    string(JOIN "\n" _private_parallel_text ${_private_parallel_patterns})
+    file(WRITE "${_private_parallel}" "${_private_parallel_text}\n")
+    target_link_options(highs PRIVATE "LINKER:-unexported_symbols_list,${_private_parallel}")
+    set_property(TARGET highs APPEND PROPERTY LINK_DEPENDS "${_private_parallel}")
+  endif()
+endif()
 include("${CMAKE_CURRENT_LIST_DIR}/elf-symbols.cmake")
 sdk_elf_symbols(highs OPTAGENT_NATIVE_1)

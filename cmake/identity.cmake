@@ -51,4 +51,3 @@ function(sdk_toolchain_identity output)
   string(SHA256 identity "${context}")
   set(${output} "${identity}" PARENT_SCOPE)
 endfunction()
-

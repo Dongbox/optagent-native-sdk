@@ -28,7 +28,7 @@
     },
     "cpsat": {
       "repository": "https://github.com/Dongbox/or-tools.git",
-      "revision": "d1607dee4e7f5b762640a54850d54348bc504398",
+      "revision": "73644d2d5c9200d1a1b62f4fd6a9369322a86516",
       "directory": "or-tools"
     },
     "sodium": {

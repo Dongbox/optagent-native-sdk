@@ -46,11 +46,35 @@ int main() {
 #else
   constexpr int rtti = 0;
 #endif
+#if defined(__SANITIZE_ADDRESS__)
+  constexpr int address_sanitizer = 1;
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer)
+  constexpr int address_sanitizer = 1;
+#else
+  constexpr int address_sanitizer = 0;
+#endif
+#else
+  constexpr int address_sanitizer = 0;
+#endif
+#if defined(__SANITIZE_THREAD__)
+  constexpr int thread_sanitizer = 1;
+#elif defined(__has_feature)
+#if __has_feature(thread_sanitizer)
+  constexpr int thread_sanitizer = 1;
+#else
+  constexpr int thread_sanitizer = 0;
+#endif
+#else
+  constexpr int thread_sanitizer = 0;
+#endif
   std::cout << "{\"stdlib\":\"" << library << "\",\"stdlib_abi\":" << abi
             << ",\"iterator_debug\":" << iterator_debug
             << ",\"debug_containers\":" << debug_containers
             << ",\"exceptions\":" << exceptions << ",\"rtti\":" << rtti
             << ",\"dynamic_crt\":" << dynamic_crt
+            << ",\"address_sanitizer\":" << address_sanitizer
+            << ",\"thread_sanitizer\":" << thread_sanitizer
             << ",\"pointer_size\":" << sizeof(void*)
             << ",\"string_size\":" << sizeof(std::string)
             << ",\"vector_size\":" << sizeof(std::vector<int>)
