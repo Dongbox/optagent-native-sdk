@@ -325,6 +325,14 @@ def _configure_command(
         f"-DOPTAGENT_SDK_HIPO={'ON' if args.hipo else 'OFF'}",
         "-DCMAKE_PREFIX_PATH=" + ";".join(str(path) for path in dependencies.values()),
     ]
+    # Reused workspaces retain *_DIR cache entries, which outrank a changed
+    # CMAKE_PREFIX_PATH. Refresh transitive package locations as one unit.
+    for owner, packages in {
+        "common": ("absl", "utf8_range", "protobuf"),
+        "support": ("OptAgentSupport",),
+    }.items():
+        if owner in dependencies:
+            configure += [f"-D{package}_DIR={dependencies[owner] / 'lib' / 'cmake' / package}" for package in packages]
     if args.compiler_cache:
         configure += [
             f"-DCMAKE_C_COMPILER_LAUNCHER={args.compiler_cache}",

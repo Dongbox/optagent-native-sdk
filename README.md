@@ -37,6 +37,11 @@ concurrent mutation of the same cache. An explicit `--seed-root` can reuse local
 Git objects; checkout revisions and patches are still verified. Never modify a
 prepared source cache in place.
 
+Retained workspaces explicitly refresh each dependency package directory when
+module identities change. Updating `CMAKE_PREFIX_PATH` alone leaves cached
+protobuf, Abseil or support package locations active. The package-cache contract
+configures two dependency sets in one real CMake build tree.
+
 The compiler identity is separate from target linkage, configuration and
 instrumentation. Host protoc stays Release/static and has no target ABI-profile
 key; support, OpenBLAS and test tools retain their actual static linkage. This
