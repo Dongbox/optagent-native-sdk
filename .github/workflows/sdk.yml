@@ -44,6 +44,7 @@ jobs:
           key: sdk-v1-${{ runner.os }}-${{ inputs.linkage }}-${{ inputs.configuration }}-${{ hashFiles('sdk.lock.json', 'CMakeLists.txt', 'cmake/**', 'patches/**') }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             sdk-v1-${{ runner.os }}-${{ inputs.linkage }}-${{ inputs.configuration }}-
+            sdk-v1-${{ runner.os }}-
       - name: Produce and test native SDK
         if: runner.os != 'Linux'
         shell: bash
@@ -52,6 +53,7 @@ jobs:
           CONFIGURATION: ${{ inputs.configuration }}
         run: |
           set -euo pipefail
+          python -m unittest discover -s tests -p 'test_*.py'
           if [[ "$RUNNER_OS" == Windows ]]; then profile=windows-amd64; else profile=macos-arm64; fi
           if [[ "$CONFIGURATION" == Debug ]]; then abi=debug; else abi=release; fi
           python sdk.py build --cache build/cache --prefix build/install --profile "$profile-$abi" --linkage "$LINKAGE" --configuration "$CONFIGURATION" --jobs 4
@@ -70,6 +72,7 @@ jobs:
           docker run --rm --platform linux/amd64 -v "$PWD:/workspace" -e LINKAGE -e CONFIGURATION optagent-sdk-tools bash -lc '
             export PATH=/opt/python/cp312-cp312/bin:$PATH
             set -euo pipefail
+            python -m unittest discover -s tests -p "test_*.py"
             if [[ "$CONFIGURATION" == Debug ]]; then abi=debug; else abi=release; fi
             python sdk.py build --cache build/cache --prefix build/install --profile "linux-x86_64-manylinux2014-$abi" --linkage "$LINKAGE" --configuration "$CONFIGURATION" --jobs 4
             cmake -S tests/consumer -B build/consumer -G Ninja -DCMAKE_PREFIX_PATH=/workspace/build/install "-DCMAKE_BUILD_TYPE=$CONFIGURATION"

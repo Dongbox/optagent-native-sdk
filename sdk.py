@@ -291,6 +291,10 @@ constexpr int thread_sanitizer = 0;
     return header + "#undef OPTAGENT_NATIVE_STRINGIFY\n#undef OPTAGENT_NATIVE_STRINGIFY_INNER\n}\n#endif\n"
 
 
+def _module_linkage(name: str, requested: str) -> str:
+    return "STATIC" if name in {"host", "support", "openblas", "test-tools"} else requested
+
+
 def _configure_command(
     args,
     name: str,
@@ -312,7 +316,7 @@ def _configure_command(
         "Ninja",
         f"-DCMAKE_MAKE_PROGRAM={shutil.which('ninja')}",
         f"-DOPTAGENT_SDK_COMPONENT={name}",
-        f"-DOPTAGENT_NATIVE_LINKAGE={args.linkage}",
+        f"-DOPTAGENT_NATIVE_LINKAGE={_module_linkage(name, args.linkage)}",
         f"-DOPTAGENT_SDK_SOURCES={manifest}",
         f"-DCMAKE_BUILD_TYPE={configuration}",
         f"-DCMAKE_INSTALL_PREFIX={prefix}",
@@ -384,8 +388,8 @@ def _module(args, lock: dict, name: str, dependencies: dict[str, Path]) -> Path:
         "source": {key: lock["sources"][key] for key in sources},
         "patches": {p: _sha(ROOT / p) for key in sources for p in lock["sources"][key].get("patches", [])},
         "recipe": {str(p.relative_to(ROOT)): _sha(p) for p in recipe},
-        "profile": args.profile,
-        "linkage": "STATIC" if name == "host" else args.linkage,
+        "profile": "host" if name == "host" else args.profile,
+        "linkage": _module_linkage(name, args.linkage),
         "configuration": configuration,
         "sanitizer": sanitizer,
         "deployment_target": args.deployment_target if platform.system() == "Darwin" else "",
@@ -576,9 +580,12 @@ def _compiler_identity(args) -> dict:
         "-G",
         "Ninja",
         "-DOPTAGENT_SDK_COMPONENT=probe",
-        f"-DOPTAGENT_NATIVE_LINKAGE={args.linkage}",
-        f"-DCMAKE_BUILD_TYPE={args.configuration}",
-        f"-DOPTAGENT_SDK_SANITIZER={args.sanitizer}",
+        # Module identity separately records its actual configuration, linkage
+        # and sanitizer. Keep the compiler/standard-library identity neutral so
+        # target variants do not recompile the always-Release host protoc.
+        "-DOPTAGENT_NATIVE_LINKAGE=STATIC",
+        "-DCMAKE_BUILD_TYPE=Release",
+        "-DOPTAGENT_SDK_SANITIZER=",
     ]
     if platform.system() == "Darwin":
         command.append(f"-DCMAKE_OSX_DEPLOYMENT_TARGET={args.deployment_target}")

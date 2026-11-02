@@ -37,6 +37,13 @@ concurrent mutation of the same cache. An explicit `--seed-root` can reuse local
 Git objects; checkout revisions and patches are still verified. Never modify a
 prepared source cache in place.
 
+The compiler identity is separate from target linkage, configuration and
+instrumentation. Host protoc stays Release/static and has no target ABI-profile
+key; support, OpenBLAS and test tools retain their actual static linkage. This
+allows static/shared target SDKs to reuse matching host and support artifacts.
+Run `python -m unittest discover -s tests -p 'test_*.py'` to verify compiler cache
+identity with real CMake probes, including a changed-flags rejection case.
+
 For Linux, build `toolchains/manylinux2014.Dockerfile` and run the same commands
 inside it using profile `linux-x86_64-manylinux2014-release`. The image pins its
 upstream digest and retains the GCC 10 / glibc 2.17 baseline. SDK module identity
