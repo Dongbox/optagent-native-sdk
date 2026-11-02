@@ -14,5 +14,6 @@
   "NOFORTRAN": "ON",
   "DYNAMIC_ARCH": "ON",
   "USE_THREAD": "OFF",
-  "USE_OPENMP": "OFF"
+  "USE_OPENMP": "OFF",
+  "DYNAMIC_OLDER": "ON"
 }

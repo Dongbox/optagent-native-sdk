@@ -1,3 +1,20 @@
 add_subdirectory("${SDK_CPSAT_SOURCE_DIR}/cmake/optagent-sdk" cpsat)
+# Native Model registration and flags belong to this backend, never to a
+# second OR-Tools runtime in the same process.
+if(BUILD_SHARED_LIBS)
+  set(_private_patterns "*N19operations_research3sat5Model*" "*FastTypeId*"
+    "*NewSatParameters*" "*NewFeasibleSolutionObserver*" "*FLAGS_*")
+  set_property(TARGET optagent_cpsat PROPERTY OPTAGENT_SDK_PRIVATE_SYMBOLS "${_private_patterns}")
+  set_target_properties(optagent_cpsat PROPERTIES VISIBILITY_INLINES_HIDDEN ON)
+  if(APPLE)
+    set(_private_file "${CMAKE_CURRENT_BINARY_DIR}/cpsat-private-symbols.list")
+    string(JOIN "\n" _private_text ${_private_patterns})
+    file(WRITE "${_private_file}" "${_private_text}\n")
+    target_link_options(optagent_cpsat PRIVATE "LINKER:-unexported_symbols_list,${_private_file}")
+    set_property(TARGET optagent_cpsat APPEND PROPERTY LINK_DEPENDS "${_private_file}")
+  elseif(UNIX)
+    target_link_options(optagent_cpsat PRIVATE "LINKER:--exclude-libs,ALL")
+  endif()
+endif()
 include("${CMAKE_CURRENT_LIST_DIR}/elf-symbols.cmake")
 sdk_elf_symbols(optagent_cpsat OPTAGENT_NATIVE_1)
