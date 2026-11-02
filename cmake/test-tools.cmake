@@ -1,0 +1,6 @@
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(INSTALL_GTEST ON CACHE BOOL "" FORCE)
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+set(gtest_build_tests OFF CACHE BOOL "" FORCE)
+set(gtest_build_samples OFF CACHE BOOL "" FORCE)
+add_subdirectory("${SDK_GTEST_SOURCE_DIR}" googletest)

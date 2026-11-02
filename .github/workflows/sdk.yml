@@ -1,0 +1,90 @@
+name: Produce Native SDK
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        type: choice
+        default: linux
+        options: [linux, macos, windows]
+      linkage:
+        type: choice
+        default: STATIC
+        options: [STATIC, SHARED]
+      configuration:
+        type: choice
+        default: Release
+        options: [Release, Debug]
+permissions:
+  contents: read
+concurrency:
+  group: sdk-${{ inputs.platform }}-${{ inputs.linkage }}-${{ inputs.configuration }}
+  cancel-in-progress: false
+jobs:
+  produce:
+    runs-on: ${{ inputs.platform == 'macos' && 'macos-26' || inputs.platform == 'windows' && 'windows-2025' || 'ubuntu-24.04' }}
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+        with:
+          arch: x64
+      - name: Install native producer tools
+        if: runner.os != 'Linux'
+        run: python -m pip install cmake==4.2.3 ninja==1.13.2
+      - name: Restore source and producer object cache
+        uses: actions/cache/restore@v4
+        with:
+          path: build/cache
+          key: sdk-v1-${{ runner.os }}-${{ inputs.linkage }}-${{ inputs.configuration }}-${{ hashFiles('sdk.lock.json', 'CMakeLists.txt', 'cmake/**', 'patches/**') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            sdk-v1-${{ runner.os }}-${{ inputs.linkage }}-${{ inputs.configuration }}-
+      - name: Produce and test native SDK
+        if: runner.os != 'Linux'
+        shell: bash
+        env:
+          LINKAGE: ${{ inputs.linkage }}
+          CONFIGURATION: ${{ inputs.configuration }}
+        run: |
+          set -euo pipefail
+          if [[ "$RUNNER_OS" == Windows ]]; then profile=windows-amd64; else profile=macos-arm64; fi
+          if [[ "$CONFIGURATION" == Debug ]]; then abi=debug; else abi=release; fi
+          python sdk.py build --cache build/cache --prefix build/install --profile "$profile-$abi" --linkage "$LINKAGE" --configuration "$CONFIGURATION" --jobs 4
+          cmake -S tests/consumer -B build/consumer -G Ninja "-DCMAKE_PREFIX_PATH=$PWD/build/install" "-DCMAKE_BUILD_TYPE=$CONFIGURATION"
+          cmake --build build/consumer --parallel 4
+          ctest --test-dir build/consumer --output-on-failure --timeout 60
+          python sdk.py pack build/install --output dist/sdk.tar.gz
+      - name: Produce and test manylinux2014 SDK
+        if: runner.os == 'Linux'
+        env:
+          LINKAGE: ${{ inputs.linkage }}
+          CONFIGURATION: ${{ inputs.configuration }}
+        run: |
+          set -euo pipefail
+          docker build --platform linux/amd64 -f toolchains/manylinux2014.Dockerfile -t optagent-sdk-tools .
+          docker run --rm --platform linux/amd64 -v "$PWD:/workspace" -e LINKAGE -e CONFIGURATION optagent-sdk-tools bash -lc '
+            export PATH=/opt/python/cp312-cp312/bin:$PATH
+            set -euo pipefail
+            if [[ "$CONFIGURATION" == Debug ]]; then abi=debug; else abi=release; fi
+            python sdk.py build --cache build/cache --prefix build/install --profile "linux-x86_64-manylinux2014-$abi" --linkage "$LINKAGE" --configuration "$CONFIGURATION" --jobs 4
+            cmake -S tests/consumer -B build/consumer -G Ninja -DCMAKE_PREFIX_PATH=/workspace/build/install "-DCMAKE_BUILD_TYPE=$CONFIGURATION"
+            cmake --build build/consumer --parallel 4
+            ctest --test-dir build/consumer --output-on-failure --timeout 60
+            python sdk.py pack build/install --output dist/sdk.tar.gz
+          '
+      - name: Save completed and recoverable producer work
+        if: always() && !cancelled()
+        uses: actions/cache/save@v4
+        with:
+          path: build/cache
+          key: sdk-v1-${{ runner.os }}-${{ inputs.linkage }}-${{ inputs.configuration }}-${{ hashFiles('sdk.lock.json', 'CMakeLists.txt', 'cmake/**', 'patches/**') }}-${{ github.run_id }}-${{ github.run_attempt }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-sdk-${{ inputs.platform }}-${{ inputs.linkage }}-${{ inputs.configuration }}
+          path: dist/sdk.tar.gz
+          if-no-files-found: error

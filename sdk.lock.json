@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "version": "0.1.0",
+  "abi_revision": 1,
+  "protobuf_version": "33.1",
+  "sources": {
+    "abseil": {
+      "repository": "https://github.com/abseil/abseil-cpp.git",
+      "revision": "d38452e1ee03523a208362186fd42248ff2609f6",
+      "directory": "abseil-cpp",
+      "patches": [
+        "patches/abseil-cpp-20250814.1.patch",
+        "patches/abseil-namespace.patch"
+      ]
+    },
+    "protobuf": {
+      "repository": "https://github.com/protocolbuffers/protobuf.git",
+      "revision": "a8d85ffbc7158660b4247f732371d1b07780510e",
+      "directory": "protobuf",
+      "patches": [
+        "patches/protobuf-v33.1.patch"
+      ]
+    },
+    "highs": {
+      "repository": "https://github.com/Dongbox/HiGHS.git",
+      "revision": "75eef419570f1d8d8c70ae82713fd58597bcf0b8",
+      "directory": "highs"
+    },
+    "cpsat": {
+      "repository": "https://github.com/Dongbox/or-tools.git",
+      "revision": "d1607dee4e7f5b762640a54850d54348bc504398",
+      "directory": "or-tools"
+    },
+    "sodium": {
+      "repository": "https://github.com/robinlinden/libsodium-cmake.git",
+      "revision": "9b2848dfc1b917a9410f0de9d81059b26cbfaa8d",
+      "directory": "libsodium-cmake",
+      "submodules": true
+    },
+    "zlib": {
+      "repository": "https://github.com/madler/zlib.git",
+      "revision": "51b7f2abdade71cd9bb0e7a373ef2610ec6f9daf",
+      "directory": "zlib"
+    },
+    "bzip2": {
+      "url": "https://sourceware.org/pub/bzip2/bzip2-1.0.8.tar.gz",
+      "sha256": "ab5a03176ee106d3f0fa90e381da478ddae405918153cca248e682cd0c4a2269",
+      "directory": "bzip2-1.0.8"
+    },
+    "openblas": {
+      "repository": "https://github.com/OpenMathLib/OpenBLAS.git",
+      "revision": "993fad6aebbce34a97d3f8c34d6d79d35b64cc48",
+      "directory": "openblas"
+    },
+    "gtest": {
+      "repository": "https://github.com/google/googletest.git",
+      "revision": "b514bdc898e2951020cbdca1304b75f5950d1f59",
+      "directory": "googletest"
+    }
+  }
+}
