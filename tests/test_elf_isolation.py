@@ -36,6 +36,8 @@ class ElfIsolationTest(unittest.TestCase):
                 "add_library(foreign SHARED marker.cc)\n"
                 "add_library(owned SHARED marker.cc)\n"
                 "sdk_elf_symbols(owned OPTAGENT_NATIVE_1)\n"
+                "add_library(consumer SHARED marker.cc)\n"
+                "target_link_libraries(consumer PRIVATE owned)\n"
             )
             for command in (
                 [
@@ -63,7 +65,12 @@ assert ctypes.addressof(first) != ctypes.addressof(second), "runtime data coales
 first.value = 31
 assert second.value == 17, "foreign runtime state changed"
 """
-            for order in (("foreign", "owned"), ("owned", "foreign")):
+            for order in (
+                ("foreign", "owned"),
+                ("owned", "foreign"),
+                ("foreign", "consumer"),
+                ("consumer", "foreign"),
+            ):
                 with self.subTest(order=order):
                     result = subprocess.run(
                         [sys.executable, "-I", "-c", program]

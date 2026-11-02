@@ -81,7 +81,8 @@ workflow is manual (`workflow_dispatch`). Producing an SDK does not publish a
 release. Review relocation, ABI rejection, solver contracts and platform runtime
 isolation evidence before publishing immutable, platform-named Release assets.
 Do not overwrite an asset referenced by an OptAgent lock; publish a new version.
-On Linux/GCC, SDK shared libraries disable GNU unique data symbols. Named ELF
+On Linux/GCC, SDK shared libraries disable GNU unique data symbols and propagate
+the matching C++ option to consumers of their public headers. Named ELF
 symbol versions alone do not stop process-wide inline-data coalescing with a
 foreign protobuf/OR-Tools runtime. The ELF contract test loads two real DSOs in
 both orders and checks separate data addresses and mutations.

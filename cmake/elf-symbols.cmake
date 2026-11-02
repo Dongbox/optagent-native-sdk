@@ -5,7 +5,7 @@ function(sdk_elf_symbols target node)
     # GNU_UNIQUE data ignores RTLD_LOCAL and can coalesce with a foreign
     # protobuf/OR-Tools runtime even when this DSO has a named symbol version.
     if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-      target_compile_options(${target} PRIVATE
+      target_compile_options(${target} PUBLIC
         "$<$<COMPILE_LANGUAGE:CXX>:-fno-gnu-unique>")
     endif()
     set(_map "${CMAKE_CURRENT_BINARY_DIR}/${target}.exports")
