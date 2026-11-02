@@ -69,7 +69,10 @@ Use `optagent_cpsat/session.h` for solve/validate operations. A `Session` owns i
 native context, accepts one synchronous `Run`, borrows inputs until return and
 borrows observer responses only during each callback. `RequestStop` is latched,
 idempotent and nonblocking. Keep the session and any shared stop flag alive until
-execution and stop callers finish. `Solve` provides an ordinary one-call session.
+execution and stop callers finish. `RunStatus::kOutOfMemory` preserves allocation
+failures separately from ordinary exceptions; `Solve` rethrows them as
+`std::bad_alloc` after cleanup. Other reported failures use `std::runtime_error`.
+`Solve` provides an ordinary one-call session.
 
 ## Release policy
 

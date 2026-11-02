@@ -532,7 +532,7 @@ def _compose(args, lock: dict, modules: dict[str, Path]) -> Path:
                 "modules": records,
                 "files": _files(stage),
                 "deployment_target": args.deployment_target if platform.system() == "Darwin" else "",
-                "features": {"hipo": args.hipo, "highs_int64": False},
+                "features": {"hipo": args.hipo, "highs_int64": False, "cpsat_allocation_status": True},
             },
         )
         stage.rename(destination)
