@@ -416,6 +416,7 @@ def _module(args, lock: dict, name: str, dependencies: dict[str, Path]) -> Path:
         "compiler": args.compiler_identity,
         "build_tools": args.build_tools,
         "driver_policy": args.configure_policy,
+        "metadata_policy": args.metadata_policy,
         "dependencies": {
             key: json.loads((path.parent / "ready.json").read_text())["id"] for key, path in dependencies.items()
         },
@@ -666,12 +667,18 @@ def main(argv: list[str] | None = None) -> int:
         args.cache = args.cache.resolve()
         args.seed_root = [path.resolve() for path in args.seed_root]
         with _producer_lock(args.cache):
-            policy = next(
-                node
+            policies = {
+                node.name: node
                 for node in ast.parse((ROOT / "sdk.py").read_text()).body
-                if isinstance(node, ast.FunctionDef) and node.name == "_configure_command"
+                if isinstance(node, ast.FunctionDef)
+            }
+            args.configure_policy = _identity(ast.dump(policies["_configure_command"], include_attributes=False))
+            args.metadata_policy = _identity(
+                [
+                    ast.dump(policies[name], include_attributes=False)
+                    for name in ("_write_source_manifest", "_relocate_metadata")
+                ]
             )
-            args.configure_policy = _identity(ast.dump(policy, include_attributes=False))
             args.producer_snapshot = _producer_snapshot()
             args.build_tools = {
                 "cmake": _run([args.cmake, "--version"], capture=True).splitlines()[0],
