@@ -110,10 +110,13 @@ def _prepare_source(name: str, spec: dict, cache: Path, seeds: list[Path]) -> Pa
             if revision != spec["revision"]:
                 raise RuntimeError(f"Source checkout revision differs: {destination}")
             # Pinned zlib's configure renames its bundled zconf.h. Accept only
-            # that exact byte-preserving upstream operation.
+            # that exact byte-preserving upstream operation, accounting for
+            # Git's checkout filters (notably core.autocrlf on Windows).
             exclusions = []
             if name == "zlib" and not (destination / "zconf.h").exists():
-                original = subprocess.check_output(["git", "-C", str(destination), "show", "HEAD:zconf.h"])
+                original = subprocess.check_output(
+                    ["git", "-C", str(destination), "cat-file", "--filters", "HEAD:zconf.h"]
+                )
                 if (destination / "zconf.h.included").read_bytes() != original:
                     raise RuntimeError("The generated zlib header backup differs")
                 exclusions = [":!zconf.h"]
