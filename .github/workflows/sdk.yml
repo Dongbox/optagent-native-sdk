@@ -21,7 +21,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   produce:
-    runs-on: ${{ inputs.platform == 'macos' && 'macos-26' || inputs.platform == 'windows' && 'windows-2025' || 'ubuntu-24.04' }}
+    runs-on: ${{ inputs.platform == 'macos' && 'macos-26' || inputs.platform == 'windows' && 'windows-latest' || 'ubuntu-24.04' }}
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
@@ -90,4 +90,5 @@ jobs:
         with:
           name: native-sdk-${{ inputs.platform }}-${{ inputs.linkage }}-${{ inputs.configuration }}
           path: dist/sdk.tar.gz
+          retention-days: 7
           if-no-files-found: error
