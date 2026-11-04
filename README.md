@@ -70,7 +70,10 @@ layout, CRT/debug and sanitizer profile. `manifest.json` records every installed
 file hash and source revision; verify it before evaluating package CMake code.
 A consumer must never fall back to fetching or compiling solver sources.
 
-Use `optagent_cpsat/session.h` for solve/validate operations. A `Session` owns its
+Use `optagent_cpsat/session.h` for solve/validate operations. Static SDKs also
+validate the native CP-SAT `Model`, observer and stop-flag API retained by
+OptAgent 1.3.0; shared SDK consumers must use the session boundary.
+A `Session` owns its
 native context, accepts one synchronous `Run`, borrows inputs until return and
 borrows observer responses only during each callback. `RequestStop` is latched,
 idempotent and nonblocking. Keep the session and any shared stop flag alive until
@@ -81,8 +84,9 @@ failures separately from ordinary exceptions; `Solve` rethrows them as
 
 ## Release policy
 
-Actions remain globally disabled during the initial local rollout. Every checked-in
-workflow is manual (`workflow_dispatch`). Producing an SDK does not publish a
+Every checked-in workflow is manual (`workflow_dispatch`). Windows production
+uses `windows-latest`, matching the OptAgent wheel runner; the imported SDK still
+requires the consumer compiler and ABI to match its manifest. Producing an SDK does not publish a
 release. Review relocation, ABI rejection, solver contracts and platform runtime
 isolation evidence before publishing immutable, platform-named Release assets.
 Do not overwrite an asset referenced by an OptAgent lock; publish a new version.

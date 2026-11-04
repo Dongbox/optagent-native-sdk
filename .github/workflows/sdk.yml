@@ -21,7 +21,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   produce:
-    runs-on: ${{ inputs.platform == 'macos' && 'macos-26' || inputs.platform == 'windows' && 'windows-2025' || 'ubuntu-24.04' }}
+    runs-on: ${{ inputs.platform == 'macos' && 'macos-26' || inputs.platform == 'windows' && 'windows-latest' || 'ubuntu-24.04' }}
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
@@ -57,10 +57,12 @@ jobs:
           if [[ "$RUNNER_OS" == Windows ]]; then profile=windows-amd64; else profile=macos-arm64; fi
           if [[ "$CONFIGURATION" == Debug ]]; then abi=debug; else abi=release; fi
           python sdk.py build --cache build/cache --prefix build/install --profile "$profile-$abi" --linkage "$LINKAGE" --configuration "$CONFIGURATION" --jobs 4
-          cmake -S tests/consumer -B build/consumer -G Ninja "-DCMAKE_PREFIX_PATH=$PWD/build/install" "-DCMAKE_BUILD_TYPE=$CONFIGURATION"
+          mv build/install build/relocated-sdk
+          python sdk.py verify build/relocated-sdk
+          cmake -S tests/consumer -B build/consumer -G Ninja "-DCMAKE_PREFIX_PATH=$PWD/build/relocated-sdk" "-DCMAKE_BUILD_TYPE=$CONFIGURATION"
           cmake --build build/consumer --parallel 4
           ctest --test-dir build/consumer --output-on-failure --timeout 60
-          python sdk.py pack build/install --output dist/sdk.tar.gz
+          python sdk.py pack build/relocated-sdk --output dist/sdk.tar.gz
       - name: Produce and test manylinux2014 SDK
         if: runner.os == 'Linux'
         env:
@@ -90,4 +92,5 @@ jobs:
         with:
           name: native-sdk-${{ inputs.platform }}-${{ inputs.linkage }}-${{ inputs.configuration }}
           path: dist/sdk.tar.gz
+          retention-days: 7
           if-no-files-found: error

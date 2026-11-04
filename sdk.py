@@ -110,10 +110,13 @@ def _prepare_source(name: str, spec: dict, cache: Path, seeds: list[Path]) -> Pa
             if revision != spec["revision"]:
                 raise RuntimeError(f"Source checkout revision differs: {destination}")
             # Pinned zlib's configure renames its bundled zconf.h. Accept only
-            # that exact byte-preserving upstream operation.
+            # that exact byte-preserving upstream operation, accounting for
+            # Git's checkout filters (notably core.autocrlf on Windows).
             exclusions = []
             if name == "zlib" and not (destination / "zconf.h").exists():
-                original = subprocess.check_output(["git", "-C", str(destination), "show", "HEAD:zconf.h"])
+                original = subprocess.check_output(
+                    ["git", "-C", str(destination), "cat-file", "--filters", "HEAD:zconf.h"]
+                )
                 if (destination / "zconf.h.included").read_bytes() != original:
                     raise RuntimeError("The generated zlib header backup differs")
                 exclusions = [":!zconf.h"]
@@ -168,11 +171,14 @@ def _prepare_source(name: str, spec: dict, cache: Path, seeds: list[Path]) -> Pa
 
 def _relocate_metadata(prefix: Path, producer_roots: list[Path]) -> None:
     for path in prefix.rglob("*.pc"):
-        path.write_text(path.read_text().replace(str(prefix), "${pcfiledir}/../.."))
+        text = path.read_text()
+        for spelling in {str(prefix), prefix.as_posix()}:
+            text = text.replace(spelling, "${pcfiledir}/../..")
+        path.write_text(text)
     for path in prefix.rglob("*.cmake"):
         text = path.read_text()
         for root in producer_roots:
-            if str(root) in text:
+            if any(spelling in text for spelling in {str(root), root.as_posix()}):
                 raise RuntimeError(f"Install package leaks a producer path: {path}")
 
 
@@ -375,6 +381,14 @@ def _configure_command(
     return configure
 
 
+def _write_source_manifest(manifest: Path, sources: dict) -> None:
+    # CMake bracket arguments preserve backslashes, but generated install()
+    # scripts quote these paths again and interpret sequences such as \a.
+    manifest.write_text(
+        "".join(f"set(SDK_{source.upper()}_SOURCE_DIR [==[{path.as_posix()}]==])\n" for source, path in sources.items())
+    )
+
+
 def _module(args, lock: dict, name: str, dependencies: dict[str, Path]) -> Path:
     sources = {
         key: _prepare_source(key, lock["sources"][key], args.cache, args.seed_root) for key in MODULE_SOURCES[name]
@@ -405,6 +419,7 @@ def _module(args, lock: dict, name: str, dependencies: dict[str, Path]) -> Path:
         "compiler": args.compiler_identity,
         "build_tools": args.build_tools,
         "driver_policy": args.configure_policy,
+        "metadata_policy": args.metadata_policy,
         "dependencies": {
             key: json.loads((path.parent / "ready.json").read_text())["id"] for key, path in dependencies.items()
         },
@@ -420,9 +435,7 @@ def _module(args, lock: dict, name: str, dependencies: dict[str, Path]) -> Path:
         return prefix
     directory.mkdir(parents=True, exist_ok=True)
     manifest = directory / "sources.cmake"
-    manifest.write_text(
-        "".join(f"set(SDK_{source.upper()}_SOURCE_DIR [==[{path}]==])\n" for source, path in sources.items())
-    )
+    _write_source_manifest(manifest, sources)
     # Install artifacts are immutable; the Ninja workspace is deliberately
     # stable across source/recipe revisions so CMake can rebuild actual deltas.
     workspace_id = _identity(
@@ -519,6 +532,7 @@ def _compose(args, lock: dict, modules: dict[str, Path]) -> Path:
         config = stage / "lib/cmake/OptAgentNative"
         config.mkdir(parents=True)
         shutil.copyfile(ROOT / "cmake/OptAgentNativeConfig.cmake", config / "OptAgentNativeConfig.cmake")
+        shutil.copyfile(ROOT / "cmake/OptAgentNativeAbi.cmake", config / "OptAgentNativeAbi.cmake")
         (config / "OptAgentNativeConfigVersion.cmake").write_text(
             f'set(PACKAGE_VERSION "{lock["version"]}")\n'
             "if(PACKAGE_FIND_VERSION VERSION_EQUAL PACKAGE_VERSION)\n"
@@ -657,12 +671,18 @@ def main(argv: list[str] | None = None) -> int:
         args.cache = args.cache.resolve()
         args.seed_root = [path.resolve() for path in args.seed_root]
         with _producer_lock(args.cache):
-            policy = next(
-                node
+            policies = {
+                node.name: node
                 for node in ast.parse((ROOT / "sdk.py").read_text()).body
-                if isinstance(node, ast.FunctionDef) and node.name == "_configure_command"
+                if isinstance(node, ast.FunctionDef)
+            }
+            args.configure_policy = _identity(ast.dump(policies["_configure_command"], include_attributes=False))
+            args.metadata_policy = _identity(
+                [
+                    ast.dump(policies[name], include_attributes=False)
+                    for name in ("_write_source_manifest", "_relocate_metadata")
+                ]
             )
-            args.configure_policy = _identity(ast.dump(policy, include_attributes=False))
             args.producer_snapshot = _producer_snapshot()
             args.build_tools = {
                 "cmake": _run([args.cmake, "--version"], capture=True).splitlines()[0],
