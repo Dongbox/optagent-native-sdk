@@ -168,11 +168,14 @@ def _prepare_source(name: str, spec: dict, cache: Path, seeds: list[Path]) -> Pa
 
 def _relocate_metadata(prefix: Path, producer_roots: list[Path]) -> None:
     for path in prefix.rglob("*.pc"):
-        path.write_text(path.read_text().replace(str(prefix), "${pcfiledir}/../.."))
+        text = path.read_text()
+        for spelling in {str(prefix), prefix.as_posix()}:
+            text = text.replace(spelling, "${pcfiledir}/../..")
+        path.write_text(text)
     for path in prefix.rglob("*.cmake"):
         text = path.read_text()
         for root in producer_roots:
-            if str(root) in text:
+            if any(spelling in text for spelling in {str(root), root.as_posix()}):
                 raise RuntimeError(f"Install package leaks a producer path: {path}")
 
 
@@ -375,6 +378,14 @@ def _configure_command(
     return configure
 
 
+def _write_source_manifest(manifest: Path, sources: dict) -> None:
+    # CMake bracket arguments preserve backslashes, but generated install()
+    # scripts quote these paths again and interpret sequences such as \a.
+    manifest.write_text(
+        "".join(f"set(SDK_{source.upper()}_SOURCE_DIR [==[{path.as_posix()}]==])\n" for source, path in sources.items())
+    )
+
+
 def _module(args, lock: dict, name: str, dependencies: dict[str, Path]) -> Path:
     sources = {
         key: _prepare_source(key, lock["sources"][key], args.cache, args.seed_root) for key in MODULE_SOURCES[name]
@@ -420,9 +431,7 @@ def _module(args, lock: dict, name: str, dependencies: dict[str, Path]) -> Path:
         return prefix
     directory.mkdir(parents=True, exist_ok=True)
     manifest = directory / "sources.cmake"
-    manifest.write_text(
-        "".join(f"set(SDK_{source.upper()}_SOURCE_DIR [==[{path}]==])\n" for source, path in sources.items())
-    )
+    _write_source_manifest(manifest, sources)
     # Install artifacts are immutable; the Ninja workspace is deliberately
     # stable across source/recipe revisions so CMake can rebuild actual deltas.
     workspace_id = _identity(
