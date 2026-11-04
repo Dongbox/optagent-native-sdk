@@ -532,6 +532,7 @@ def _compose(args, lock: dict, modules: dict[str, Path]) -> Path:
         config = stage / "lib/cmake/OptAgentNative"
         config.mkdir(parents=True)
         shutil.copyfile(ROOT / "cmake/OptAgentNativeConfig.cmake", config / "OptAgentNativeConfig.cmake")
+        shutil.copyfile(ROOT / "cmake/OptAgentNativeAbi.cmake", config / "OptAgentNativeAbi.cmake")
         (config / "OptAgentNativeConfigVersion.cmake").write_text(
             f'set(PACKAGE_VERSION "{lock["version"]}")\n'
             "if(PACKAGE_FIND_VERSION VERSION_EQUAL PACKAGE_VERSION)\n"

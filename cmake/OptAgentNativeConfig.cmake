@@ -58,14 +58,13 @@ endif()
 if(NOT EXISTS "${OPTAGENT_NATIVE_PREFIX}/include/optagent_native/abi.h")
   message(FATAL_ERROR "Native SDK ABI contract header is missing")
 endif()
-try_compile(_sdk_abi_compatible
-  SOURCE_FROM_CONTENT sdk_abi_check.cc "#include <optagent_native/abi.h>\nint main() {}\n"
-  CMAKE_FLAGS "-DINCLUDE_DIRECTORIES=${OPTAGENT_NATIVE_PREFIX}/include"
-    "-DCMAKE_CXX_STANDARD=20" "-DCMAKE_CXX_STANDARD_REQUIRED=ON"
-  NO_CACHE OUTPUT_VARIABLE _sdk_abi_diagnostic)
-if(NOT _sdk_abi_compatible)
-  message(FATAL_ERROR "Native SDK C++ ABI profile differs:\n${_sdk_abi_diagnostic}")
+include("${CMAKE_CURRENT_LIST_DIR}/OptAgentNativeAbi.cmake")
+if(CMAKE_BUILD_TYPE)
+  set(_abi_configuration "${CMAKE_BUILD_TYPE}")
+else()
+  set(_abi_configuration "${_sdk_configuration}")
 endif()
+optagent_native_check_abi("${OPTAGENT_NATIVE_PREFIX}" "${_abi_configuration}")
 
 include(CMakeFindDependencyMacro)
 foreach(_dependency absl utf8_range protobuf OptAgentSupport highs OptAgentCpsat GTest)
